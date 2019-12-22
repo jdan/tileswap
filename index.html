@@ -1,0 +1,187 @@
+<h1>tileswap</h1>
+
+<canvas id="mycanvas"></canvas>
+
+<script src="./processing.min.js"></script>
+<script type="text/processing" data-processing-target="mycanvas">
+
+int IMAGE_WIDTH = 400;
+int CELL_SIZE = 10;
+
+void setup() {
+    size(3 * IMAGE_WIDTH, IMAGE_WIDTH);
+    background(255);
+    noLoop();
+}
+
+void shuffle(arr) {
+    int idx = arr.length;
+    while (idx > 1) {
+        int rnd = int(random(idx));
+        int tmp = arr[--idx];
+        arr[idx] = arr[rnd];
+        arr[rnd] = tmp;
+    }
+}
+
+void draw() {
+    /* @pjs preload="desk.jpg,monalisa.jpg,davinci.jpg,monalisa-flip.jpg,me.jpg,twitter.jpg"; */
+    PImage desk;
+    desk = loadImage("desk.jpg");
+    image(desk, 0, 0);
+
+    PImage monalisa;
+    monalisa = loadImage("monalisa.jpg");
+    image(monalisa, IMAGE_WIDTH, 0);
+
+    loadPixels();
+
+    // Compute luminance for the input image
+    HashMap cellBrightness = new HashMap();
+    for (int cellX = 0; cellX < IMAGE_WIDTH; cellX += CELL_SIZE) {
+        for (int cellY = 0; cellY < IMAGE_WIDTH; cellY += CELL_SIZE) {
+            double totalR = 0;
+            double totalG = 0;
+            double totalB = 0;
+
+            for (int x = 0; x < CELL_SIZE; x++) {
+                for (int y = 0; y < CELL_SIZE; y++) {
+
+                    int canvasX = cellX + x;
+                    int canvasY = cellY + y;
+
+                    // The entire canvas is 3 * IMAGE_WIDTH across
+                    color c = pixels[canvasY * 3 * IMAGE_WIDTH + canvasX];
+                    //luminance += 0.2126 * red(c) + 0.7152 * green(c) + 0.0722 * blue(c);
+                    totalR += red(c);
+                    totalG += green(c);
+                    totalB += blue(c);
+                }
+            }
+
+            double totalSize = CELL_SIZE * CELL_SIZE;
+            double[] average = { totalR / totalSize, totalG / totalSize, totalB / totalSize };
+
+            String key = String(cellX) + "," + String(cellY);
+            cellBrightness.put(key, average);
+        }
+    }
+
+    // Compute luminance for the output image
+    HashMap destBrightness = new HashMap();
+    for (int cellX = 0; cellX < IMAGE_WIDTH; cellX += CELL_SIZE) {
+        for (int cellY = 0; cellY < IMAGE_WIDTH; cellY += CELL_SIZE) {
+            double totalR = 0;
+            double totalG = 0;
+            double totalB = 0;
+
+            for (int x = 0; x < CELL_SIZE; x++) {
+                for (int y = 0; y < CELL_SIZE; y++) {
+
+                    int canvasX = IMAGE_WIDTH + cellX + x;
+                    int canvasY = cellY + y;
+
+                    color c = pixels[canvasY * 3 * IMAGE_WIDTH + canvasX];
+                    //luminance += 0.2126 * red(c) + 0.7152 * green(c) + 0.0722 * blue(c);
+                    totalR += red(c);
+                    totalG += green(c);
+                    totalB += blue(c);
+                }
+            }
+
+            double totalSize = CELL_SIZE * CELL_SIZE;
+            double[] average = { totalR / totalSize, totalG / totalSize, totalB / totalSize };
+
+            String key = String(cellX) + "," + String(cellY);
+            destBrightness.put(key, average);
+        }
+    }
+
+    // Build a list of cell x's and y's and shuffle them
+    int[] cellXs = [];
+    for (int x = 0; x < IMAGE_WIDTH; x += CELL_SIZE) {
+        append(cellXs, x);
+    }
+
+    int[] cellYs = [];
+    for (int y = 0; y < IMAGE_WIDTH; y += CELL_SIZE) {
+        append(cellYs, y);
+    }
+
+    int[] destXs = [];
+    for (int x = 0; x < IMAGE_WIDTH; x += CELL_SIZE) {
+        append(destXs, x);
+    }
+
+    int[] destYs = [];
+    for (int y = 0; y < IMAGE_WIDTH; y += CELL_SIZE) {
+        append(destYs, y);
+    }
+
+    shuffle(cellXs);
+    shuffle(cellYs);
+    shuffle(destXs);
+    shuffle(destYs);
+
+    // Greedily find the closest cell in luminance
+    HashMap occupied = new HashMap();
+
+    for (int i = 0; i < cellXs.length; i++) {
+        int cellX = cellXs[i];
+
+        for (int j = 0; j < cellYs.length; j++) {
+            int cellY = cellYs[j];
+
+            String cellKey = String(cellX) + "," + String(cellY);
+            double myBrightness = cellBrightness.get(cellKey);
+
+            int bestMatchX = null;
+            int bestMatchY = null;
+            double bestMatch = null;
+
+            for (int u = 0; u < destXs.length; u++) {
+                int destX = destXs[u];
+
+                for (int v = 0; v < destYs.length; v++) {
+                    int destY = destYs[v];
+                    String key = String(destX) + "," + String(destY);
+                    if (occupied.containsKey(key)) {
+                        continue;
+                    }
+
+                    double brightness = destBrightness.get(key);
+
+                    double dr = myBrightness[0] - brightness[0];
+                    double dg = myBrightness[1] - brightness[1];
+                    double db = myBrightness[2] - brightness[2];
+                    double dist = dr*dr + dg*dg + db*db;
+
+                    if (bestMatch == null || dist < bestMatch) {
+                        bestMatch = dist;
+                        bestMatchX = destX;
+                        bestMatchY = destY;
+                        // println("Best match: " + bestMatchX + ", " + bestMatchY + ": " + bestMatch);
+                    }
+                }
+            }
+
+            // Mark it as occupied
+            String bestMatchKey = String(bestMatchX) + "," + String(bestMatchY);
+            occupied.put(bestMatchKey, true);
+
+            // Copy it over
+            copy(
+                cellX,
+                cellY,
+                CELL_SIZE,
+                CELL_SIZE,
+                2 * IMAGE_WIDTH + bestMatchX,
+                bestMatchY,
+                CELL_SIZE,
+                CELL_SIZE,
+            );
+        }
+    }
+
+}
+</script>
